@@ -1,0 +1,288 @@
+/*BEGIN_LEGAL 
+		Intel Open Source License 
+
+		Copyright (c) 2002-2016 Intel Corporation. All rights reserved.
+
+		Redistribution and use in source and binary forms, with or without
+		modification, are permitted provided that the following conditions are
+met:
+
+Redistributions of source code must retain the above copyright notice,
+this list of conditions and the following disclaimer.  Redistributions
+in binary form must reproduce the above copyright notice, this list of
+conditions and the following disclaimer in the documentation and/or
+other materials provided with the distribution.  Neither the name of
+the Intel Corporation nor the names of its contributors may be used to
+endorse or promote products derived from this software without
+specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE INTEL OR
+ITS CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+END_LEGAL */
+/*
+	*  This file contains an ISA-portable PIN tool for tracing system calls
+	*/
+
+
+#define NDEBUG
+
+#include <stdio.h>
+#include <time.h>
+#include <unistd.h>
+#include <string>
+#include <vector>
+
+#include <sys/syscall.h>
+#include "pin.H"
+
+#include <sys/time.h>
+#include <errno.h>
+#include <signal.h>
+#include <iostream>
+#include <time.h>
+
+using std::string;
+using std::cerr;
+using std::endl;
+
+FILE * trace;
+bool isMainProgram = false;
+
+KNOB<BOOL>   KnobReplay(KNOB_MODE_WRITEONCE,  "pintool",
+				"replay", "0", "replay the program");
+
+KNOB<string> KnobLogFile(KNOB_MODE_WRITEONCE, "pintool", "o", "trace.out", "specify trace file name");
+
+/*
+struct RtnData {
+  int err;
+  
+  char* return;
+}; 
+
+struct ProgramData {
+  char* num1;
+  char* num2;
+  vector<Return> syscall_returns;
+  vector<Return> libcall_returns;
+  
+};
+
+vector<Return> syscall_returns = {};
+
+ProgramData* ReadData(FILE* f) {
+  ProgramData out = 
+} //ReadData
+*/
+  
+static VOID SysBefore(ADDRINT ip, ADDRINT num, ADDRINT arg0, ADDRINT arg1, ADDRINT arg2, 
+		      ADDRINT arg3, ADDRINT arg4, ADDRINT arg5, CONTEXT *ctxt)
+{
+  if(!isMainProgram) return;
+
+  if(KnobReplay == true)
+    {
+      //Replay the program
+      
+    }
+}
+
+
+VOID SysAfter(ADDRINT ret, ADDRINT err)
+{
+  if(!isMainProgram) return;
+  
+  if(KnobReplay == false)
+    {
+      std::cout << "Reached SysAfter" << endl;
+      // Record non-deterministic inputs and store to "trace"
+      if (0 == err) {
+	fprintf(trace, "return: %lu\n", ret);
+      } else {
+	fprintf(trace, "err: %lu\n", err);
+      }
+      fflush(trace);
+    } //endif
+}
+
+VOID MainBegin()
+{
+  std::cout << "Reached MainBegin" << endl;
+  isMainProgram = true;
+}
+
+VOID MainReturn()
+{
+  isMainProgram = false;
+}
+
+/*
+VOID fread_hook(char* buf, size_t size, size_t count, FILE *stream, CONTEXT *ctxt)
+{
+  fprintf((FILE*)1, "reached fread");
+  fflush((FILE*)1);
+  if (KnobReplay) {
+    fprintf((FILE*)1, "Not yet implemented");
+  } else {
+    PIN_CallApplicationFunction(ctxt, PIN_ThreadId(), CALLINGSTD_DEFAULT, (AFUNPTR)IARG_ORIG_FUNCPTR,
+				PIN_PARG(size_t), &size,
+				PIN_PARG(size_t), &count,
+				PIN_PARG(char*), buf,
+				PIN_PARG(FILE*), stream,
+				PIN_PARG_END());
+    fprintf(trace, "fread: %p\n", buf);
+    fflush(trace);
+  } 
+}
+
+VOID localtime_hook(struct tm *timer, CONTEXT *ctxt)
+{
+  if (KnobReplay) {
+    fprintf((FILE*)1, "Not yet implemented")
+  } else {
+    PIN_CallApplicationFunction(ctxt, PIN_ThreadId(), CALLINGSTD_DEFAULT, (AFUNPTR)IARG_ORIG_FUNCPTR,
+				PIN_PARG(struct tm), timer, PIN_PARG_END());
+    fprintf(trace, "sec: %i\n", timer->tm_sec);
+    fprintf(trace, "min: %i\n", timer->tm_min);
+    fprintf(trace, "hour: %i\n", timer->tm_hour);
+    fprintf(trace, "mday: %i\n", timer->tm_mday);
+    fprintf(trace, "mon: %i\n", timer->tm_mon);
+    fprintf(trace, "year: %i\n", timer->tm_year);
+    fprintf(trace, "wday: %i\n", timer->tm_wday);
+    fprintf(trace, "yday: %i\n", timer->tm_yday);
+    fprintf(trace, "isdst: %i\n", timer->tm_isdst);
+    fflush(trace);
+  } 
+}
+
+VOID rand_hook(CONTEXT *ctxt)
+{
+  if (KnobReplay) {
+    fprintf((FILE*)1, "Not yet implemented");
+  } else {
+    unsigned long int rand_num = PIN_CallApplicationFunction(ctxt, PIN_ThreadId(), CALLINGSTD_DEFAULT, (AFUNPTR)IARG_ORIG_FUNCPTR);
+    fprintf(trace, "rand: %lu\n", rand_num);
+    fflush(trace);
+  } 
+}
+
+*/
+
+VOID Image(IMG img, VOID *v)
+{
+  RTN mainRtn = RTN_FindByName(img, "main");
+  //RTN freadRtn = RTN_FindByName(img, "fread");
+  //RTN localtimeRtn = RTN_FindByName(img, "localtime");
+  if(RTN_Valid(mainRtn))
+    {
+      RTN_Open(mainRtn);
+      RTN_InsertCall(mainRtn, IPOINT_BEFORE, (AFUNPTR)MainBegin, IARG_END);
+      RTN_InsertCall(mainRtn, IPOINT_AFTER, (AFUNPTR)MainReturn, IARG_END);
+      RTN_Close(mainRtn);
+    }
+  /*
+  if (RTN_Valid(freadRtn))
+    {
+      RTN_Open(freadRtn);
+      RTN_ReplaceSignature(freadRtn, (AFUNPTR)fread_hook);
+      RTN_Close(freadRtn);
+    }
+  if (RTN_Valid(localtimeRtn))
+    {
+      RTN_Open(localtimeRtn);
+      RTN_ReplaceSignature(localtimeRtn, (AFUNPTR)localtime_hook);
+      RTN_Close(freadRtn);
+    }
+  */
+}
+
+VOID Instruction(INS ins, VOID *v)
+{
+  if(INS_IsSyscall(ins)) {
+    INS_InsertCall(ins, IPOINT_BEFORE, AFUNPTR(SysBefore),
+		   IARG_INST_PTR, IARG_SYSCALL_NUMBER,
+		   IARG_SYSARG_VALUE, 0, IARG_SYSARG_VALUE, 1,
+		   IARG_SYSARG_VALUE, 2, IARG_SYSARG_VALUE, 3,
+		   IARG_SYSARG_VALUE, 4, IARG_SYSARG_VALUE, 5,
+		   IARG_CONTEXT, IARG_END);
+  }
+} //Instruction
+
+
+VOID SyscallExit(THREADID threadIndex, CONTEXT *ctxt, SYSCALL_STANDARD std, VOID *v)
+{
+  SysAfter(PIN_GetSyscallReturn(ctxt, std), PIN_GetSyscallErrno(ctxt, std));
+}
+
+VOID Fini(INT32 code, VOID *v)
+{
+  fclose(trace);
+}
+
+/* ===================================================================== */
+/* Print Help Message                                                    */
+/* ===================================================================== */
+
+INT32 Usage()
+{
+  cerr <<
+    "This tool record/replay the program.\n"
+    "\n";
+
+  cerr << KNOB_BASE::StringKnobSummary();
+
+  cerr << endl;
+
+  return -1; 
+
+}
+
+/* ===================================================================== */
+/* Main                                                                  */
+/* ===================================================================== */
+
+int main(int argc, char *argv[])
+{
+  PIN_InitSymbols();
+
+  if (PIN_Init(argc, argv)) return Usage();
+
+  if (KnobReplay)
+    {
+      printf("====== REPLAY MODE =======\n");
+      trace = fopen(KnobLogFile.Value().c_str(), "rb");
+    }
+  else
+    {
+      printf("====== RECORDING MODE =======\n");
+      trace = fopen(KnobLogFile.Value().c_str(), "wb");
+    }
+
+  if(trace == NULL)
+    {
+      fprintf(stderr, "File open error! (trace.out)\n");
+      return 0;
+    }
+
+
+  IMG_AddInstrumentFunction(Image, 0);
+  INS_AddInstrumentFunction(Instruction, 0);
+  PIN_AddSyscallExitFunction(SyscallExit, 0);
+
+
+  PIN_AddFiniFunction(Fini, 0);
+
+  // Never returns
+  PIN_StartProgram();
+
+  return 0;
+}
