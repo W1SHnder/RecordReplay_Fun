@@ -50,6 +50,7 @@ END_LEGAL */
 #include <iostream>
 #include <time.h>
 
+
 using std::string;
 using std::cerr;
 using std::endl;
@@ -61,6 +62,15 @@ KNOB<BOOL>   KnobReplay(KNOB_MODE_WRITEONCE,  "pintool",
 				"replay", "0", "replay the program");
 
 KNOB<string> KnobLogFile(KNOB_MODE_WRITEONCE, "pintool", "o", "trace.out", "specify trace file name");
+
+std::vector<std::pair<ADDRINT, ADDRINT>> syscall_returns;
+
+//Instrumentation variables
+char num1_str[1024];
+char num2_str[1024];
+bool read_found = false;
+ADDRINT read_buf = 0;
+
 
 /*
 struct RtnData {
@@ -83,40 +93,56 @@ ProgramData* ReadData(FILE* f) {
   ProgramData out = 
 } //ReadData
 */
-  
-static VOID SysBefore(ADDRINT ip, ADDRINT num, ADDRINT arg0, ADDRINT arg1, ADDRINT arg2, 
+
+/*
+VOID AppStart(VOID *v)
+{
+  num1 = (char*)malloc(100);
+
+}
+*/
+
+VOID SysBefore(ADDRINT ip, ADDRINT num, ADDRINT arg0, ADDRINT arg1, ADDRINT arg2, 
 		      ADDRINT arg3, ADDRINT arg4, ADDRINT arg5, CONTEXT *ctxt)
 {
   if(!isMainProgram) return;
-
+  
   if(KnobReplay == true)
     {
-      //Replay the program
-      
-    }
+           
+    } else {
+   	if (num == SYS_read && !read_found) {
+	    read_found = true;
+	    read_buf = arg1;
+	} 
+    } //endif
 }
 
 
 VOID SysAfter(ADDRINT ret, ADDRINT err)
 {
+  //std::cout << "Reacehd SysAfter" << endl;
   if(!isMainProgram) return;
   
   if(KnobReplay == false)
-    {
-      std::cout << "Reached SysAfter" << endl;
+    { 
       // Record non-deterministic inputs and store to "trace"
-      if (0 == err) {
-	fprintf(trace, "return: %lu\n", ret);
-      } else {
-	fprintf(trace, "err: %lu\n", err);
-      }
-      fflush(trace);
+      
+      //Record num2
+      if (read_found && read_buf != 0) {
+	
+	char* read_str = (char*)malloc(ret);
+	PIN_SafeCopy(read_str, (void*)read_buf, ret);
+	fprintf(trace, "num2: %s\n", read_str);
+	fflush(trace);
+	free(read_str);
+	read_buf = 0;
+      } //endif
     } //endif
 }
 
 VOID MainBegin()
-{
-  std::cout << "Reached MainBegin" << endl;
+{ 
   isMainProgram = true;
 }
 
@@ -125,45 +151,9 @@ VOID MainReturn()
   isMainProgram = false;
 }
 
+
+
 /*
-VOID fread_hook(char* buf, size_t size, size_t count, FILE *stream, CONTEXT *ctxt)
-{
-  fprintf((FILE*)1, "reached fread");
-  fflush((FILE*)1);
-  if (KnobReplay) {
-    fprintf((FILE*)1, "Not yet implemented");
-  } else {
-    PIN_CallApplicationFunction(ctxt, PIN_ThreadId(), CALLINGSTD_DEFAULT, (AFUNPTR)IARG_ORIG_FUNCPTR,
-				PIN_PARG(size_t), &size,
-				PIN_PARG(size_t), &count,
-				PIN_PARG(char*), buf,
-				PIN_PARG(FILE*), stream,
-				PIN_PARG_END());
-    fprintf(trace, "fread: %p\n", buf);
-    fflush(trace);
-  } 
-}
-
-VOID localtime_hook(struct tm *timer, CONTEXT *ctxt)
-{
-  if (KnobReplay) {
-    fprintf((FILE*)1, "Not yet implemented")
-  } else {
-    PIN_CallApplicationFunction(ctxt, PIN_ThreadId(), CALLINGSTD_DEFAULT, (AFUNPTR)IARG_ORIG_FUNCPTR,
-				PIN_PARG(struct tm), timer, PIN_PARG_END());
-    fprintf(trace, "sec: %i\n", timer->tm_sec);
-    fprintf(trace, "min: %i\n", timer->tm_min);
-    fprintf(trace, "hour: %i\n", timer->tm_hour);
-    fprintf(trace, "mday: %i\n", timer->tm_mday);
-    fprintf(trace, "mon: %i\n", timer->tm_mon);
-    fprintf(trace, "year: %i\n", timer->tm_year);
-    fprintf(trace, "wday: %i\n", timer->tm_wday);
-    fprintf(trace, "yday: %i\n", timer->tm_yday);
-    fprintf(trace, "isdst: %i\n", timer->tm_isdst);
-    fflush(trace);
-  } 
-}
-
 VOID rand_hook(CONTEXT *ctxt)
 {
   if (KnobReplay) {
@@ -177,9 +167,37 @@ VOID rand_hook(CONTEXT *ctxt)
 
 */
 
+VOID timeBefore(time_t *timer)
+{
+  fprintf(trace, "time: %lu\n", *timer);
+} 
+
+time_t time_hook(CONTEXT* ctxt, AFUNPTR time_fp, time_t* tmr)
+{
+  std::cout << "Reached bullshit" << endl;
+ 
+
+  time_t res;
+
+  PIN_CallApplicationFunction(ctxt, PIN_ThreadId(), 
+		  CALLINGSTD_DEFAULT, time_fp, 
+		  PIN_PARG(time_t), res, PIN_PARG(time_t*), tmr, PIN_PARG_END());
+
+  if (KnobReplay) {
+
+  } else {
+    std::cout << "Reached time hook" << endl;
+    //ADDRINT timer = PIN_GetContextReg(ctxt, REG_RAX);
+    fprintf(trace, "time: %lu\n", res);
+  }
+    return res;
+}
+
 VOID Image(IMG img, VOID *v)
 {
-  RTN mainRtn = RTN_FindByName(img, "main");
+  RTN mainRtn = RTN_FindByName(img, "__libc_start_main");
+  //ADDRINT mainaddr = (ADDRINT)0x4012A1;
+  //RTN mainRtn = RTN_FindByAddress(mainaddr); 
   //RTN freadRtn = RTN_FindByName(img, "fread");
   //RTN localtimeRtn = RTN_FindByName(img, "localtime");
   if(RTN_Valid(mainRtn))
@@ -189,20 +207,24 @@ VOID Image(IMG img, VOID *v)
       RTN_InsertCall(mainRtn, IPOINT_AFTER, (AFUNPTR)MainReturn, IARG_END);
       RTN_Close(mainRtn);
     }
-  /*
-  if (RTN_Valid(freadRtn))
+  
+  
+  RTN timeRtn = RTN_FindByName(img, "time"); 
+  
+  if (RTN_Valid(timeRtn))
     {
-      RTN_Open(freadRtn);
-      RTN_ReplaceSignature(freadRtn, (AFUNPTR)fread_hook);
-      RTN_Close(freadRtn);
+      //RTN_Open(timeRtn); 
+      PROTO protoTime = PROTO_Allocate(PIN_PARG(time_t*), CALLINGSTD_DEFAULT, "time", PIN_PARG(time_t *), PIN_PARG_END());
+      RTN_ReplaceSignature(timeRtn, AFUNPTR(time_hook), 
+		      IARG_PROTOTYPE, protoTime, 
+		      IARG_CONST_CONTEXT, 
+		      IARG_ORIG_FUNCPTR, 
+		      IARG_FUNCARG_ENTRYPOINT_VALUE, 0, 
+		      IARG_END);
+      //RTN_Close(timeRtn);
     }
-  if (RTN_Valid(localtimeRtn))
-    {
-      RTN_Open(localtimeRtn);
-      RTN_ReplaceSignature(localtimeRtn, (AFUNPTR)localtime_hook);
-      RTN_Close(freadRtn);
-    }
-  */
+  
+  
 }
 
 VOID Instruction(INS ins, VOID *v)
@@ -225,6 +247,7 @@ VOID SyscallExit(THREADID threadIndex, CONTEXT *ctxt, SYSCALL_STANDARD std, VOID
 
 VOID Fini(INT32 code, VOID *v)
 {
+  std::cout << "Reached Fini" << endl; 
   fclose(trace);
 }
 
@@ -252,19 +275,35 @@ INT32 Usage()
 
 int main(int argc, char *argv[])
 {
+  /*
+    if (KnobReplay) {
+    FILE* temp = fopen(KnobLogFile.Value().c_str(), "rb");
+    fscanf(temp, "num1: %s\n", argv[argc-1]);
+    std::cout << "num1: " << argv[argc-1] << endl;
+  }
+  */
   PIN_InitSymbols();
-
   if (PIN_Init(argc, argv)) return Usage();
-
+ 
+	
   if (KnobReplay)
     {
-      printf("====== REPLAY MODE =======\n");
       trace = fopen(KnobLogFile.Value().c_str(), "rb");
+      fscanf(trace, "num1: %s\n", num1_str);
+      fscanf(trace, "num2: %s\n", num2_str); 
+      //Replaces argv1
+      //fscanf(trace, "num1: %s\n", argv[argc-1]);
+      //std::cout << "num1: " << argv[argc-1] << endl;
+      //if (PIN_Init(argc, argv)) return Usage();
+      printf("====== REPLAY MODE =======\n");
     }
   else
     {
-      printf("====== RECORDING MODE =======\n");
       trace = fopen(KnobLogFile.Value().c_str(), "wb");
+      //Stores the first number to trace
+      fprintf(trace, "num1: %s\n", argv[argc-1]);
+      //if (PIN_Init(argc, argv)) return Usage();
+      printf("====== RECORDING MODE =======\n");
     }
 
   if(trace == NULL)
